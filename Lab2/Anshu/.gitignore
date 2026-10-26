@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+venv/
+franka_emika_panda/panda_torque_table_shelves.xml
