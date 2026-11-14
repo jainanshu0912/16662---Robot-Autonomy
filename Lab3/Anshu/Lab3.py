@@ -45,16 +45,37 @@ MODEL_XML = "franka_emika_panda/panda_lab3_scene.xml"
 BLOCK_HALF = 0.02             # 4 cm cubes
 GRID_CENTER = np.array([0.50, 0.0])
 GRID_SPACING = 0.06           # centre-to-centre: 2 cm gap, so an open finger hits a neighbour
-HOME_X = [0.36, 0.46, 0.56, 0.66]   # 10 cm apart so open fingers never touch a neighbour
+HOME_X = [0.33, 0.42, 0.51, 0.60]   # 9 cm apart so open fingers never touch a neighbour;
+                                    # x <= 0.60 keeps the arm clear of frankapy's front wall
 RED_HOME_Y = 0.15             # robot's left (+y). Not further out: the 20 cm wide hand would
 BLUE_HOME_Y = -0.15           # hit the bottom side shelves during y-axis grasps
 TABLE_Z = 0.0                 # height of the table surface
+
+# ---- Optional calibration from the real setup (written by calibrate.py) ----
+# If calibration.json exists, block locations and table height come from measured points.
+CALIBRATION_FILE = "calibration.json"
+CALIB = None
+if os.path.exists(CALIBRATION_FILE):
+    import json
+    with open(CALIBRATION_FILE) as _f:
+        CALIB = {k: np.array(v, dtype=float) for k, v in json.load(_f).items()}
+    # measured points are TCP positions at grasp height (block centre)
+    TABLE_Z = float(np.mean([p[2] for p in CALIB.values()])) - BLOCK_HALF
+    print(f"Using {CALIBRATION_FILE}: {len(CALIB)} measured points, table z = {TABLE_Z:.4f}")
 
 TCP_OFFSET = 0.1034           # hand frame -> centre of the finger pads (Franka hand)
 GRASP_Z = TABLE_Z + BLOCK_HALF            # TCP height when grasping a block on the table
 PLACE_Z = TABLE_Z + BLOCK_HALF + 0.003    # release a few mm above the table
 APPROACH_Z = TABLE_Z + 0.12               # pre-grasp / pre-place height
 TRANSIT_Z = TABLE_Z + 0.16                # height for moving between locations
+
+# frankapy virtual safety walls (approximate inner faces, robot base frame) and the
+# half-length of the Franka hand along its finger axis. A grasp axis is disabled at a
+# location if the hand would reach past a wall (with margin).
+WALL_FRONT_X = 0.75
+WALL_SIDE_Y = 0.46
+HAND_HALF_LENGTH = 0.105
+WALL_MARGIN = 0.07   # generous: frankapy pads its link boxes, and x = 0.66 already failed its check
 
 GRIPPER_OPEN = 0.04
 GRIPPER_CLOSED = 0.0125
@@ -81,6 +102,8 @@ GRIPPER_IDX = 7
 # Geometry: symbolic location -> table position
 # ============================================================================
 def location_xy(loc):
+    if CALIB is not None:
+        return calibrated_xy(loc)
     if loc.startswith("g"):
         r, c = int(loc[1]), int(loc[2])
         # row 0 = far from the robot (+x), column 0 = robot's left (+y)
@@ -91,6 +114,37 @@ def location_xy(loc):
     if loc.startswith("hb"):
         return np.array([HOME_X[i], BLUE_HOME_Y])
     raise ValueError(f"Unknown location {loc}")
+
+
+def calibrated_xy(loc):
+    """Location from measured reference points: an exact measurement if there is one,
+    otherwise bilinear interpolation between the 4 measured grid corners, or linear
+    interpolation between the first and last measured home slot of that colour."""
+    if loc in CALIB:
+        return CALIB[loc][:2].copy()
+    if loc.startswith("g"):
+        r, c = int(loc[1]) / 2.0, int(loc[2]) / 2.0
+        far = (1 - c) * CALIB["g00"] + c * CALIB["g02"]
+        near = (1 - c) * CALIB["g20"] + c * CALIB["g22"]
+        return ((1 - r) * far + r * near)[:2]
+    side = loc[:2]                      # "hr" or "hb"
+    s = int(loc[2]) / 3.0
+    return ((1 - s) * CALIB[f"{side}0"] + s * CALIB[f"{side}3"])[:2]
+
+
+def wall_blocked_axes():
+    """Grasp axes that would push the hand into frankapy's virtual walls, per location."""
+    blocked = {}
+    for loc in dom.GRID_CELLS + dom.RED_HOME + dom.BLUE_HOME:
+        x, y = location_xy(loc)
+        axes = set()
+        if x + HAND_HALF_LENGTH > WALL_FRONT_X - WALL_MARGIN:      # fingers along x
+            axes.add("x")
+        if abs(y) + HAND_HALF_LENGTH > WALL_SIDE_Y - WALL_MARGIN:  # fingers along y
+            axes.add("y")
+        if axes:
+            blocked[loc] = axes
+    return blocked
 
 
 # ============================================================================
@@ -135,7 +189,13 @@ def add_box(tree, name, pos, size, rgba, free=False, density=20, collide=True):
 
 def build_scene(placement):
     tree = ET.parse(ROOT_MODEL_XML)
+    # keep the ground plane below the table, even if the measured table is below z = 0
+    for g in tree.getroot().find("worldbody").findall("geom"):
+        if g.get("name") == "ground":
+            g.set("pos", f"0 0 {min(0.0, TABLE_Z) - 0.02}")
     for name, pos, size in STATIC_BOXES:
+        if name == "TablePlane":   # match the (measured) table height
+            pos = [pos[0], pos[1], pos[2] + TABLE_Z]
         add_box(tree, name, pos, size, [0.6, 0.6, 0.65, 1])
     # grey grid squares (visual only)
     for l in dom.GRID_CELLS:
@@ -412,6 +472,9 @@ def main():
     ap.add_argument("--record", metavar="FILE.mp4", help="save a video of the simulation (needs ffmpeg)")
     args = ap.parse_args()
 
+    dom.AXIS_BLOCKED = wall_blocked_axes()
+    for loc, axes in sorted(dom.AXIS_BLOCKED.items()):
+        print(f"{loc}: fingers along {'/'.join(sorted(axes))} not allowed (hand would reach a virtual wall)")
     planner = dom.FastPlanner(dom.make_Grid_domain())
     placement = dom.make_initial_state()
     model = build_scene(placement)
@@ -452,12 +515,18 @@ def main():
     stage_wps = []
     for label, moves in stages:
         builder.waypoints = []
-        for src, dst, block, pa, qa in moves:
+        labels = []
+        for i, (src, dst, block, pa, qa) in enumerate(moves, 1):
+            n0 = len(builder.waypoints)
             builder.pick_and_place(src, dst, pa, qa)
+            labels += [f"move {i}: {block} {src}->{dst} (pick along {pa}, place along {qa})"] * (len(builder.waypoints) - n0)
+        n0 = len(builder.waypoints)
         builder.go_home()
+        labels += ["return home"] * (len(builder.waypoints) - n0)
         W, D = builder.as_array(), builder.durations()
+        tcp = np.array([builder.ik.fk(w[:7])[0] for w in W])
         fname = os.path.join(args.out, label.replace(" ", "_") + ".npz")
-        np.savez(fname, waypoints=W, durations=D)
+        np.savez(fname, waypoints=W, durations=D, labels=np.array(labels), tcp=tcp)
         print(f"Saved {len(W)} waypoints for '{label}' to {fname}")
         stage_wps.append((label, moves, W, D))
 

@@ -76,6 +76,12 @@ def make_Grid_domain():
     return schemas
 
 
+# Locations where a grasp axis is not allowed for reasons other than neighbouring blocks
+# (e.g. the hand would hit the robot's virtual safety walls). Filled in by Lab3.py.
+# {location: {"x"} or {"y"} or {"x", "y"}}
+AXIS_BLOCKED = {}
+
+
 def static_facts():
     facts = {("empty", (VOID,))}
     # Grid cells: x axis = rows (towards/away from robot), y axis = columns (left/right)
@@ -84,15 +90,19 @@ def static_facts():
             l = cell(r, c)
             facts.add(("accepts", (l, "red")))
             facts.add(("accepts", (l, "blue")))
-            facts.add(("xnbr", (l, _cell_or_void(r - 1, c), _cell_or_void(r + 1, c))))
-            facts.add(("ynbr", (l, _cell_or_void(r, c - 1), _cell_or_void(r, c + 1))))
+            if "x" not in AXIS_BLOCKED.get(l, ()):
+                facts.add(("xnbr", (l, _cell_or_void(r - 1, c), _cell_or_void(r + 1, c))))
+            if "y" not in AXIS_BLOCKED.get(l, ()):
+                facts.add(("ynbr", (l, _cell_or_void(r, c - 1), _cell_or_void(r, c + 1))))
     # Home slots are 10 cm apart, far enough that open fingers never reach a neighbour,
     # so they can be grasped along either axis.
     for home, colour in ((RED_HOME, "red"), (BLUE_HOME, "blue")):
         for l in home:
             facts.add(("accepts", (l, colour)))
-            facts.add(("xnbr", (l, VOID, VOID)))
-            facts.add(("ynbr", (l, VOID, VOID)))
+            if "x" not in AXIS_BLOCKED.get(l, ()):
+                facts.add(("xnbr", (l, VOID, VOID)))
+            if "y" not in AXIS_BLOCKED.get(l, ()):
+                facts.add(("ynbr", (l, VOID, VOID)))
     return facts
 
 
