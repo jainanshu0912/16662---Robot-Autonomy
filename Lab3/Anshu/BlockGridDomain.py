@@ -1,30 +1,3 @@
-"""
-Symbolic domain for Lab 3: rearranging red/blue blocks on a 3x3 grid.
-
-Locations
-  - Grid cells  g{r}{c}, r = row (0 = far from robot), c = column (0 = robot's left)
-  - Home slots  hr0..hr3 (red side, robot's left) and hb0..hb3 (blue side, robot's right)
-  - "void"      a virtual, always-empty location used as the neighbour of edge cells
-
-Predicates
-  empty(?l)           location ?l is free
-  colored(?l, ?c)     location ?l holds a block of colour ?c
-  (Blocks of the same colour are interchangeable, so the planner only reasons about colours.
-   This removes a huge amount of symmetry from the search. The executor keeps track of which
-   physical block sits where.)
-  accepts(?l, ?c)     a block of colour ?c may be put at ?l        (static: grid cells take
-                      both colours, home slots only take their own colour)
-  xnbr(?l, ?n1, ?n2)  neighbours of ?l along the robot's x axis    (static)
-  ynbr(?l, ?n1, ?n2)  neighbours of ?l along the robot's y axis    (static)
-
-Grasp constraint
-  The grid is tight enough that an open finger collides with a block in a neighbouring cell.
-  A top grasp whose fingers close along axis A is therefore only allowed when both
-  neighbours of the cell along A are empty. The same rule applies when placing, which also
-  stops the robot from dropping a block into the middle of a ring of blocks.
-  There are four move schemas, one for each (pick axis, place axis) combination; the axes
-  are encoded in the action name so the executor knows how to orient the gripper.
-"""
 import SymPlanner as sp
 
 ROWS, COLS = 3, 3

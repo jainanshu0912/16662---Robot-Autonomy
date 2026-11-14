@@ -1,22 +1,3 @@
-"""
-Send the saved Lab 3 joint trajectories to the real Panda.
-
-Uses the same frankapy interface as our Lab 2 real-robot script (lab2_franka.py):
-FrankaArm.reset_joints(), goto_joints(), open_gripper(), close_gripper().
-
-Waypoint files (written by `python Lab3.py`): waypoints/<stage>.npz with
-  waypoints: rows of [q1 ... q7, gripper]
-  durations: seconds for each row
-  - if a row's gripper value differs from the current one, it is a gripper action
-    (open/close, arm stays still)
-  - otherwise the arm moves to q in the given duration
-
-Before moving, every waypoint of every stage is checked with frankapy's own virtual-wall
-check. If any waypoint would hit a wall, the offending moves are printed and nothing runs.
-
-SAFETY: always run with a partner holding the e-stop. Run with --dry-run first, and keep
-SPEED_SCALE > 1 for the first real runs.
-"""
 import argparse
 import glob
 import os
