@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from scipy.spatial.transform import Rotation
 import RobotUtil as rt
-from lab3.SymPlanner import ActionSchema, Predicate, Planner
+from SymPlanner import ActionSchema, Predicate, Planner
 
 # TO UNCOMMENT
 # from frankapy import FrankaArm
@@ -323,16 +323,24 @@ class Arm:
         Returns:
             an ArmPos which achieves the given target_pose, or None if no position could be found
         """
+        ref = self.q if force_guess is None else force_guess
+        best, best_dist = None, np.inf
         for idx in range(num_tries):
-            start_pos = force_guess if force_guess is not None and idx == 0 else self.sample_pos()
+            if idx == 0:
+                start_pos = ref.copy()
+            elif idx < num_tries // 2:
+                start_pos = np.clip(ref + np.random.normal(0., 0.3, ref.shape), self.lo, self.hi)
+            else:
+                start_pos = self.sample_pos()
             soln = self.ik(target_pose, start_pos, **ik_kwargs)
-            if soln is None:
-                print("Could not reach")
-            elif self.is_in_collision(soln):
-                print("Solution is in collision")
-            if soln is not None and not self.is_in_collision(soln):
-                return soln
-        return None
+            if soln is None or self.is_in_collision(soln):
+                continue
+            dist = np.max(np.abs(soln - ref))
+            if dist < best_dist:
+                best, best_dist = soln, dist
+            if dist < 0.5:
+                break
+        return best
 
     def is_in_collision(self, q: ArmPos) -> bool:
         """
@@ -901,4 +909,7 @@ def main(pattern_num: int):
 
 
 if __name__ == '__main__':
+    main(1)
+    main(2)
+    main(3)
     main(4)
