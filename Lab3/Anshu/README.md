@@ -9,7 +9,7 @@ The robot rearranges 4 red and 4 blue blocks into the four patterns from the han
 | `SymPlanner.py` | HW3 planner: STRIPS action schemas + A* search (unchanged API) |
 | `BlockGridDomain.py` | Lab 3 domain: grid/home locations, the finger-collision rule, the four patterns, a fast feasibility check, and `FastPlanner` (same A*, indexed precondition matching) |
 | `Lab3.py` | Full pipeline: plan → IK waypoints → collision check → simulate → save trajectories |
-| `run_real_robot.py` | Sends the saved trajectories to the real Panda (**template, assumes frankapy**) |
+| `run_real_robot.py` | Sends the saved trajectories to the real Panda with frankapy (same calls as the Lab 2 real-robot script) |
 | `RobotUtil.py`, `franka_emika_panda/` | From Lab 2 |
 
 ## How to run
@@ -52,4 +52,4 @@ IK is damped least squares on the MuJoCo Panda model. The gripper yaw is the pla
 - **Measure and set** `GRID_CENTER`, `GRID_SPACING`, `HOME_X`, `RED_HOME_Y`, `BLUE_HOME_Y` and `TABLE_Z` at the top of `Lab3.py` to match where you put the blocks. These are in the robot base frame, in metres. Then re-run `python Lab3.py --headless` to regenerate `waypoints/`.
 - Red goes on the robot's left (+y) and blue on its right (−y). Row 0 of each pattern is the row furthest from the robot.
 - Do a dry run, then a first run with `SPEED_SCALE` increased and blocks removed.
-- If your Lab 2 robot interface isn't frankapy, edit only `move_arm` / `move_gripper` in `run_real_robot.py`.
+- `run_real_robot.py` uses the same frankapy calls as `lab2_franka.py` (`reset_joints`, `goto_joints`, `open_gripper`, `close_gripper`). It moves to the Lab 2 start pose first and asks for Enter before each pattern.
